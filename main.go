@@ -1,104 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
-	"encoding/json"
-	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
-	jsonschemaReflect "github.com/invopop/jsonschema"
+	"github.com/kong/proxy-wasm-rate-limiting/config"
 
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm"
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
 )
-
-// -----------------------------------------------------------------------------
-// Schema
-// -----------------------------------------------------------------------------
-
-type Schema struct {
-	schema *jsonschema.Schema
-}
-
-func GenerateSchema(v interface{}) Schema {
-	jsr := jsonschemaReflect.Reflect(&v)
-	schemaText, err := jsr.MarshalJSON()
-	if err != nil {
-		panic("could not generate JSON Schema from struct interface")
-	}
-
-	sch, err := jsonschema.CompileString("schema.json", string(schemaText))
-	if err != nil {
-		panic("could not compile generated JSON Schema")
-	}
-
-	return Schema{
-		schema: sch,
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Instance Config
-// -----------------------------------------------------------------------------
-
-type InstanceConfig struct {
-	// Accepted hits per second
-	Second int64 `json:"second"`
-
-	// Accepted hits per minute
-	Minute int64 `json:"minute"`
-
-	// Accepted hits per hour
-	Hour int64 `json:"hour"`
-
-	// Accepted hits per day
-	Day int64 `json:"day"`
-
-	// Accepted hits per month
-	Month int64 `json:"month"`
-
-	// Accepted hits per year
-	Year int64 `json:"year"`
-
-	// Criteria to limit by
-	LimitBy string `json:"limit_by" jsonschema:"enum=ip,enum=header,enum=path,default=ip"` // TODO consumer, credential, service
-
-	// Header name to use when limiting by header
-	HeaderName string `json:"header_name,omitempty" jsonschema:"pattern=^[A-Za-z0-9_]+$"`
-
-	// Path to use when limiting by path
-	Path string `json:"path" jsonschema:"pattern=^/[A-Za-z0-9_.~/%:@!$&'()*+,;=-]*$"` // TODO path validation is more complex (proper percent-encoding, no empty path segments)
-
-	// Policy to adopt for counters
-	Policy string `json:"policy" jsonschema:"enum=local,default=local"` // TODO cluster, redis
-
-	// If counter cannot be determined, accept (true) or reject (false) request
-	FaultTolerant bool `json:"fault_tolerant" jsonschema:"default=true"`
-
-	// If enabled, does not return rate limit counter information in response headers
-	HideClientHeaders bool `json:"hide_client_headers" jsonschema:"default=false"`
-}
-
-var instanceConfigSchema Schema
-
-func parseInstanceConfig(data []byte) (InstanceConfig, error) {
-	conf := &InstanceConfig{}
-
-	if len(data) == 0 {
-		return *conf, fmt.Errorf("missing configuration")
-	}
-
-	if err := json.Unmarshal(data, conf); err != nil {
-		return *conf, fmt.Errorf("invalid JSON in configuration")
-	}
-
-	if err := instanceConfigSchema.schema.Validate(conf); err != nil {
-		return *conf, err
-	}
-
-	return *conf, nil
-}
 
 // -----------------------------------------------------------------------------
 // VM Context
@@ -113,8 +23,6 @@ var xRateLimitLimit map[string]string
 var xRateLimitRemaining map[string]string
 
 func (*VMContext) NewPluginContext(vmID uint32) types.PluginContext {
-	instanceConfigSchema = GenerateSchema(&InstanceConfig{})
-
 	expiration = map[string]int64{
 		"second": 1,
 		"minute": 60,
@@ -126,10 +34,10 @@ func (*VMContext) NewPluginContext(vmID uint32) types.PluginContext {
 
 	xRateLimitLimit = make(map[string]string)
 	xRateLimitRemaining = make(map[string]string)
-	
+
 	for k, _ := range expiration {
 		t := strings.Title(k)
-	
+
 		xRateLimitLimit[k] = "X-RateLimit-Limit-" + t
 		xRateLimitRemaining[k] = "X-RateLimit-Remaining-" + t
 	}
@@ -143,7 +51,7 @@ func (*VMContext) NewPluginContext(vmID uint32) types.PluginContext {
 
 type PluginContext struct {
 	types.DefaultPluginContext
-	conf InstanceConfig
+	conf config.Config
 }
 
 func (ctx *PluginContext) OnPluginStart(confSize int) types.OnPluginStartStatus {
@@ -153,13 +61,12 @@ func (ctx *PluginContext) OnPluginStart(confSize int) types.OnPluginStartStatus 
 		return types.OnPluginStartStatusFailed
 	}
 
-	config, err := parseInstanceConfig(data)
+	err = config.Load(data, &ctx.conf)
 	if err != nil {
 		proxywasm.LogCriticalf("error parsing plugin configuration: %v", err)
 		return types.OnPluginStartStatusFailed
 	}
 
-	ctx.conf = config
 	return types.OnPluginStartStatusOK
 }
 
@@ -175,7 +82,7 @@ func (ctx *PluginContext) NewHttpContext(pluginID uint32) types.HttpContext {
 
 type RateLimitingContext struct {
 	types.DefaultHttpContext
-	conf *InstanceConfig
+	conf *config.Config
 }
 
 func getForwardedIp() string {
@@ -186,7 +93,7 @@ func getForwardedIp() string {
 	return ""
 }
 
-func getIdentifier(conf *InstanceConfig) string {
+func getIdentifier(conf *config.Config) string {
 	identifier := ""
 	if conf.LimitBy == "header" {
 		header, err := proxywasm.GetHttpRequestHeader(conf.HeaderName)
@@ -214,20 +121,24 @@ type Usage struct {
 	remaining int64
 }
 
-func localPolicyUsage(conf *InstanceConfig, identifier string, period string, now time.Time) (int64, error) {
+func localPolicyUsage(conf *config.Config, identifier string, period string, now time.Time) (int64, error) {
 	// FIXME
 	return 0, nil
 }
 
-func localPolicyIncrement(conf *InstanceConfig, limits map[string]int64, identifier string, now time.Time) {
+func localPolicyIncrement(conf *config.Config, limits map[string]int64, identifier string, now time.Time) {
 	// FIXME
 }
 
-func getUsage(conf *InstanceConfig, identifier string, now time.Time, limits map[string]int64) (map[string]Usage, string, error) {
+func getUsage(conf *config.Config, identifier string, now time.Time, limits map[string]int64) (map[string]Usage, string, error) {
 	usage := make(map[string]Usage)
 	stop := ""
 
 	for period, limit := range limits {
+		if limit == -1 {
+			continue
+		}
+
 		curUsage, err := localPolicyUsage(conf, identifier, period, now)
 		if err != nil {
 			return usage, period, err
@@ -276,7 +187,7 @@ func getTimestamps(now int64) *Stamps {
 	return &stamps
 }
 
-func processUsage(conf *InstanceConfig, usage map[string]Usage, stop string, now time.Time) types.Action {
+func processUsage(conf *config.Config, usage map[string]Usage, stop string, now time.Time) types.Action {
 	var headers map[string]string
 	reset := int64(0)
 
@@ -335,7 +246,7 @@ func processUsage(conf *InstanceConfig, usage map[string]Usage, stop string, now
 			pairs = append(pairs, [2]string{"Retry-After", string(reset)})
 		}
 
-		if err := proxywasm.SendHttpResponse(429, pairs, []byte("API rate limit exceeded"), -1); err != nil {
+		if err := proxywasm.SendHttpResponse(429, pairs, []byte("API rate limit exceeded!"), -1); err != nil {
 			panic(err)
 		}
 		return types.ActionPause
