@@ -10,68 +10,6 @@ import (
 	fflib "github.com/pquerna/ffjson/fflib/v1"
 )
 
-// MarshalJSON marshal bytes to json - template
-func (j *Config) MarshalJSON() ([]byte, error) {
-	var buf fflib.Buffer
-	if j == nil {
-		buf.WriteString("null")
-		return buf.Bytes(), nil
-	}
-	err := j.MarshalJSONBuf(&buf)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// MarshalJSONBuf marshal buff to json - template
-func (j *Config) MarshalJSONBuf(buf fflib.EncodingBuffer) error {
-	if j == nil {
-		buf.WriteString("null")
-		return nil
-	}
-	var err error
-	var obj []byte
-	_ = obj
-	_ = err
-	buf.WriteString(`{"second":`)
-	fflib.FormatBits2(buf, uint64(j.Second), 10, j.Second < 0)
-	buf.WriteString(`,"minute":`)
-	fflib.FormatBits2(buf, uint64(j.Minute), 10, j.Minute < 0)
-	buf.WriteString(`,"hour":`)
-	fflib.FormatBits2(buf, uint64(j.Hour), 10, j.Hour < 0)
-	buf.WriteString(`,"day":`)
-	fflib.FormatBits2(buf, uint64(j.Day), 10, j.Day < 0)
-	buf.WriteString(`,"month":`)
-	fflib.FormatBits2(buf, uint64(j.Month), 10, j.Month < 0)
-	buf.WriteString(`,"year":`)
-	fflib.FormatBits2(buf, uint64(j.Year), 10, j.Year < 0)
-	buf.WriteString(`,"limit_by":`)
-	fflib.WriteJsonString(buf, string(j.LimitBy))
-	buf.WriteByte(',')
-	if len(j.HeaderName) != 0 {
-		buf.WriteString(`"header_name":`)
-		fflib.WriteJsonString(buf, string(j.HeaderName))
-		buf.WriteByte(',')
-	}
-	buf.WriteString(`"path":`)
-	fflib.WriteJsonString(buf, string(j.Path))
-	buf.WriteString(`,"policy":`)
-	fflib.WriteJsonString(buf, string(j.Policy))
-	if j.FaultTolerant {
-		buf.WriteString(`,"fault_tolerant":true`)
-	} else {
-		buf.WriteString(`,"fault_tolerant":false`)
-	}
-	if j.HideClientHeaders {
-		buf.WriteString(`,"hide_client_headers":true`)
-	} else {
-		buf.WriteString(`,"hide_client_headers":false`)
-	}
-	buf.WriteByte('}')
-	return nil
-}
-
 const (
 	ffjtConfigbase = iota
 	ffjtConfignosuchkey
