@@ -294,8 +294,8 @@ func processUsage(ctx *RateLimitingContext, counters map[string]Usage, stop stri
 				reset = max(1, window-uint64((now-((*ts)[k]))/1000))
 			}
 
-			headers[xRateLimitLimit[k]] = fmt.Sprintf("%d", limit)
-			headers[xRateLimitRemaining[k]] = fmt.Sprintf("%d", remaining)
+			headers[xRateLimitLimit[k]] = fmt.Sprintf("%d", curLimit)
+			headers[xRateLimitRemaining[k]] = fmt.Sprintf("%d", curRemaining)
 		}
 
 		headers["RateLimit-Limit"] = fmt.Sprintf("%d", limit)
