@@ -16,7 +16,7 @@ import (
 // Utils
 // -----------------------------------------------------------------------------
 
-func max(a uint64, b uint64) uint64 {
+func max(a int64, b int64) int64 {
 	if a > b {
 		return a
 	}
@@ -35,13 +35,13 @@ func getTimestamps(t time.Time) *Timestamps {
 	ye, mo, da := t.Year(), t.Month(), t.Day()
 	ho, mi, se, lo := t.Hour(), t.Minute(), t.Second(), t.Location()
 
-	ts["now"] = t.UnixMilli()
-	ts["second"] = time.Date(ye, mo, da, ho, mi, se, 0, lo).UnixMilli()
-	ts["minute"] = time.Date(ye, mo, da, ho, mi, 0, 0, lo).UnixMilli()
-	ts["hour"] = time.Date(ye, mo, da, ho, 0, 0, 0, lo).UnixMilli()
-	ts["day"] = time.Date(ye, mo, da, 0, 0, 0, 0, lo).UnixMilli()
-	ts["month"] = time.Date(ye, mo, 1, 0, 0, 0, 0, lo).UnixMilli()
-	ts["year"] = time.Date(ye, 1, 1, 0, 0, 0, 0, lo).UnixMilli()
+	ts["now"] = t.Unix()
+	ts["second"] = time.Date(ye, mo, da, ho, mi, se, 0, lo).Unix()
+	ts["minute"] = time.Date(ye, mo, da, ho, mi, 0, 0, lo).Unix()
+	ts["hour"] = time.Date(ye, mo, da, ho, 0, 0, 0, lo).Unix()
+	ts["day"] = time.Date(ye, mo, da, 0, 0, 0, 0, lo).Unix()
+	ts["month"] = time.Date(ye, mo, 1, 0, 0, 0, 0, lo).Unix()
+	ts["year"] = time.Date(ye, 1, 1, 0, 0, 0, 0, lo).Unix()
 
 	return &ts
 }
@@ -54,12 +54,12 @@ type VMContext struct {
 	types.DefaultVMContext
 }
 
-var expiration map[string]uint64
+var expiration map[string]int64
 var xRateLimitLimit map[string]string
 var xRateLimitRemaining map[string]string
 
 func (*VMContext) NewPluginContext(vmID uint32) types.PluginContext {
-	expiration = map[string]uint64{
+	expiration = map[string]int64{
 		"second": 1,
 		"minute": 60,
 		"hour":   3600,
@@ -178,12 +178,12 @@ func getIdentifier(conf *config.Config) Identifier {
 
 type Usage struct {
 	limit     int64
-	remaining uint64
-	usage     uint64
+	remaining int64
+	usage     int64
 	cas       uint32
 }
 
-func localPolicyUsage(ctx *RateLimitingContext, id Identifier, period string, ts *Timestamps) (uint64, uint32, error) {
+func localPolicyUsage(ctx *RateLimitingContext, id Identifier, period string, ts *Timestamps) (int64, uint32, error) {
 	cacheKey := getLocalKey(ctx, id, period, (*ts)[period])
 
 	value, cas, err := proxywasm.GetSharedData(cacheKey)
@@ -194,13 +194,14 @@ func localPolicyUsage(ctx *RateLimitingContext, id Identifier, period string, ts
 		return 0, 0, err
 	}
 
-	ret := binary.LittleEndian.Uint64(value)
+	ret := int64(binary.LittleEndian.Uint64(value))
 	return ret, cas, nil
 }
 
 func localPolicyIncrement(ctx *RateLimitingContext, id Identifier, counters map[string]Usage, ts *Timestamps) {
 	for period, usage := range counters {
 		cacheKey := getLocalKey(ctx, id, period, (*ts)[period])
+
 		buf := make([]byte, 8)
 		value := usage.usage
 		cas := usage.cas
@@ -208,7 +209,7 @@ func localPolicyIncrement(ctx *RateLimitingContext, id Identifier, counters map[
 		saved := false
 		var err error
 		for i := 0; i < 10; i++ {
-			binary.LittleEndian.PutUint64(buf, value+1)
+			binary.LittleEndian.PutUint64(buf, uint64(value+1))
 			err = proxywasm.SetSharedData(cacheKey, buf, cas)
 			if err == nil {
 				saved = true
@@ -216,7 +217,7 @@ func localPolicyIncrement(ctx *RateLimitingContext, id Identifier, counters map[
 			} else if err == types.ErrorStatusCasMismatch {
 				// Get updated value, updated cas and retry
 				buf, cas, err = proxywasm.GetSharedData(cacheKey)
-				value = binary.LittleEndian.Uint64(buf)
+				value = int64(binary.LittleEndian.Uint64(buf))
 			} else {
 				break
 			}
@@ -225,7 +226,6 @@ func localPolicyIncrement(ctx *RateLimitingContext, id Identifier, counters map[
 			proxywasm.LogErrorf("could not increment counter for period '%v': %v", period, err)
 		}
 	}
-	// FIXME
 }
 
 func getUsage(ctx *RateLimitingContext, id Identifier, ts *Timestamps) (map[string]Usage, string, error) {
@@ -243,7 +243,7 @@ func getUsage(ctx *RateLimitingContext, id Identifier, ts *Timestamps) (map[stri
 		}
 
 		// What is the current usage for the configured limit name?
-		remaining := uint64(limit) - curUsage
+		remaining := limit - int64(curUsage)
 
 		// Recording usage
 		counters[period] = Usage{
@@ -264,14 +264,14 @@ func getUsage(ctx *RateLimitingContext, id Identifier, ts *Timestamps) (map[stri
 func processUsage(ctx *RateLimitingContext, counters map[string]Usage, stop string, ts *Timestamps) types.Action {
 	conf := ctx.conf
 	var headers map[string]string
-	reset := uint64(0)
+	reset := int64(0)
 
 	now := (*ts)["now"]
 	if !conf.HideClientHeaders {
 		headers = make(map[string]string)
 		limit := int64(0)
-		window := uint64(0)
-		remaining := uint64(0)
+		window := int64(0)
+		remaining := int64(0)
 
 		for k, v := range counters {
 			curLimit := v.limit
@@ -291,7 +291,7 @@ func processUsage(ctx *RateLimitingContext, counters map[string]Usage, stop stri
 				window = curWindow
 				remaining = curRemaining
 
-				reset = max(1, window-uint64((now-((*ts)[k]))/1000))
+				reset = max(1, window-(now-((*ts)[k])))
 			}
 
 			headers[xRateLimitLimit[k]] = fmt.Sprintf("%d", curLimit)
@@ -304,19 +304,18 @@ func processUsage(ctx *RateLimitingContext, counters map[string]Usage, stop stri
 	}
 
 	if stop != "" {
-		var pairs [][2]string = nil
+		pairs := [][2]string{}
 
 		if !conf.HideClientHeaders {
-			pairs := [][2]string{}
 			if headers != nil {
 				for k, v := range headers {
 					pairs = append(pairs, [2]string{k, v})
 				}
 			}
-			pairs = append(pairs, [2]string{"Retry-After", fmt.Sprintf("%d", reset)})
 		}
+		pairs = append(pairs, [2]string{"Retry-After", fmt.Sprintf("%d", reset)})
 
-		if err := proxywasm.SendHttpResponse(429, pairs, []byte("API rate limit exceeded!"), -1); err != nil {
+		if err := proxywasm.SendHttpResponse(429, pairs, []byte("Go informs: API rate limit exceeded!"), -1); err != nil {
 			panic(err)
 		}
 		return types.ActionPause
@@ -324,24 +323,6 @@ func processUsage(ctx *RateLimitingContext, counters map[string]Usage, stop stri
 	
 	if headers != nil {
 		ctx.headers = headers
-	}
-
-	return types.ActionContinue
-}
-
-func (ctx *RateLimitingContext) OnHttpResponseHeaders(numHeaders int, eof bool) types.Action {
-	if !eof {
-		return types.ActionContinue
-	}
-	if ctx.headers != nil {
-		pairs, err := proxywasm.GetHttpResponseHeaders()
-		if err != nil {
-			panic(err)
-		}
-		for k, v := range ctx.headers {
-			pairs = append(pairs, [2]string{k, v})
-		}
-		proxywasm.ReplaceHttpResponseHeaders(pairs)
 	}
 
 	return types.ActionContinue
@@ -370,6 +351,24 @@ func (ctx *RateLimitingContext) OnHttpRequestHeaders(numHeaders int, eof bool) t
 		}
 
 		localPolicyIncrement(ctx, id, counters, ts)
+	}
+
+	return types.ActionContinue
+}
+
+func (ctx *RateLimitingContext) OnHttpResponseHeaders(numHeaders int, eof bool) types.Action {
+	if !eof {
+		return types.ActionContinue
+	}
+	if ctx.headers != nil {
+		pairs, err := proxywasm.GetHttpResponseHeaders()
+		if err != nil {
+			panic(err)
+		}
+		for k, v := range ctx.headers {
+			pairs = append(pairs, [2]string{k, v})
+		}
+		proxywasm.ReplaceHttpResponseHeaders(pairs)
 	}
 
 	return types.ActionContinue
