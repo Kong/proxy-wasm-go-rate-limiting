@@ -1,6 +1,6 @@
-module github.com/kong/proxy-wasm-rate-limiting
+module github.com/kong/proxy-wasm-go-rate-limiting
 
-go 1.18
+go 1.20
 
 require github.com/tetratelabs/proxy-wasm-go-sdk v0.19.0
 

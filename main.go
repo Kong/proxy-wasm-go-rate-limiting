@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kong/proxy-wasm-rate-limiting/config"
+	"github.com/kong/proxy-wasm-go-rate-limiting/config"
 
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm"
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
@@ -21,6 +21,14 @@ func max(a int64, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+func getProperty(namespace string, property string) string {
+	bytes, err := proxywasm.GetProperty([]string{namespace, property})
+	if err != nil {
+		return string(bytes)
+	}
+	return ""
 }
 
 // -----------------------------------------------------------------------------
@@ -122,6 +130,8 @@ func (ctx *PluginContext) NewHttpContext(pluginID uint32) types.HttpContext {
 	return &RateLimitingContext{
 		conf: &ctx.conf,
 		limits: &ctx.limits,
+		routeId: getProperty("kong", "route_id"),
+		serviceId: getProperty("kong", "service_id"),
 	}
 }
 
@@ -139,11 +149,7 @@ type RateLimitingContext struct {
 }
 
 func getForwardedIp() string {
-	data, err := proxywasm.GetProperty([]string{"ngx", "remote_addr"})
-	if err != nil {
-		return string(data)
-	}
-	return ""
+	return getProperty("ngx", "remote_addr")
 }
 
 func getLocalKey(ctx *RateLimitingContext, id Identifier, period string, date int64) string {
