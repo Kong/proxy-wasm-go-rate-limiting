@@ -16,8 +16,6 @@ using the proxy-wasm API for running on WebAssembly-enabled gateways.
 ## Build requirements
 
 * [tinygo](https://tinygo.org)
-* [proxy-wasm-go-sdk](github.com/tetratelabs/proxy-wasm-go-sdk)
-* [ffjson](https://github.com/pquerna/ffjson)
 
 ## Building and running
 
