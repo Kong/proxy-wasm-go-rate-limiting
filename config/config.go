@@ -7,6 +7,7 @@ import (
 // -----------------------------------------------------------------------------
 // Instance Config
 // -----------------------------------------------------------------------------
+//go:generate ffjson -noencoder $GOFILE
 
 type Config struct {
 	// Accepted hits per second
