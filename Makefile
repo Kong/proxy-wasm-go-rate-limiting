@@ -19,5 +19,9 @@ config/config_ffjson.go: $(GOPATH_BIN)/ffjson config/config.go
 fmt:
 	$(GOFMT) -w .
 
+test: rate-limiting.wasm
+	# $(GO) test -v ./...
+	echo 'TODO: test placeholder'
+
 clean:
 	rm $(FILTER_NAME).wasm
