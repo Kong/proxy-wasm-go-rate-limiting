@@ -3,8 +3,8 @@ _transform: true
 
 services:
 - name: demo
-  url: http://mockbin.org
-#  url: http://host.docker.internal:6502/
+  url: http://httpbin.org
+# url: http://host.docker.internal:6502
   routes:
   - name: my-route
     paths:
