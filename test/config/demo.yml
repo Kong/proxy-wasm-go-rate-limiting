@@ -13,4 +13,5 @@ services:
     filter_chains:
     - filters:
       - name: rate-limiting
-        config: '{"minute": 3}'
+        config:
+          minute: 3

@@ -24,7 +24,7 @@ fi
 
 mkdir -p wasm
 
-cp -a ../*.wasm wasm/
+cp -a ../*.wasm ../*.meta.json wasm/
 
 script_dir=$(dirname $(realpath $0))
 
